@@ -60,6 +60,7 @@ class EntityCfg:
     # Articulation (only for articulated entities).
     joint_pos: dict[str, float] = field(default_factory=lambda: {".*": 0.0})
     joint_vel: dict[str, float] = field(default_factory=lambda: {".*": 0.0})
+    ctrl: dict[str, float] | None = None
 
   init_state: InitialStateCfg = field(default_factory=InitialStateCfg)
   spec_fn: Callable[[], mujoco.MjSpec] = field(
@@ -154,11 +155,18 @@ class Entity:
       joint_pos = resolve_expr(self.cfg.init_state.joint_pos, self.joint_names)
       qpos_components.append(joint_pos)
 
+    ctrl = None
+    if self._non_free_joints and self.cfg.init_state.ctrl is not None:
+      ctrl = resolve_expr(self.cfg.init_state.ctrl, self.actuator_names)
+
     key_qpos = np.hstack(qpos_components) if qpos_components else np.array([])
     key = self._spec.add_key(name="init_state", qpos=key_qpos)
 
-    if self.is_actuated and joint_pos is not None:
-      key.ctrl = joint_pos
+    if self.is_actuated:
+      if ctrl is not None:
+        key.ctrl = ctrl
+      elif joint_pos is not None:
+        key.ctrl = joint_pos
 
   # Attributes.
 
