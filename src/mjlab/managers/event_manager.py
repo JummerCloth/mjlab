@@ -9,16 +9,15 @@ from prettytable import PrettyTable
 
 from mjlab.managers.manager_base import ManagerBase
 from mjlab.managers.manager_term_config import EventMode, EventTermCfg
-from mjlab.utils.dataclasses import get_terms
 
 if TYPE_CHECKING:
-  from mjlab.envs.manager_based_env import ManagerBasedEnv
+  from mjlab.envs import ManagerBasedRlEnv
 
 
 class EventManager(ManagerBase):
-  _env: ManagerBasedEnv
+  _env: ManagerBasedRlEnv
 
-  def __init__(self, cfg: object, env: ManagerBasedEnv):
+  def __init__(self, cfg: dict[str, EventTermCfg], env: ManagerBasedRlEnv):
     self.cfg = cfg
     self._mode_term_names: dict[EventMode, list[str]] = dict()
     self._mode_term_cfgs: dict[EventMode, list[EventTermCfg]] = dict()
@@ -68,10 +67,18 @@ class EventManager(ManagerBase):
     return list(self._mode_term_names.keys())
 
   @property
-  def domain_randomization_fields(self) -> list[str]:
-    return self._domain_randomization_fields
+  def domain_randomization_fields(self) -> tuple[str, ...]:
+    return tuple(self._domain_randomization_fields)
 
   # Methods.
+
+  def get_term_cfg(self, term_name: str) -> EventTermCfg:
+    """Get the configuration of a specific event term by name."""
+    for mode in self._mode_term_names:
+      if term_name in self._mode_term_names[mode]:
+        index = self._mode_term_names[mode].index(term_name)
+        return self._mode_term_cfgs[mode][index]
+    raise ValueError(f"Event term '{term_name}' not found in active terms.")
 
   def reset(self, env_ids: torch.Tensor | None = None):
     for mode_cfg in self._mode_class_term_cfgs.values():
@@ -171,8 +178,7 @@ class EventManager(ManagerBase):
     self._reset_term_last_triggered_step_id: list[torch.Tensor] = list()
     self._reset_term_last_triggered_once: list[torch.Tensor] = list()
 
-    cfg_items = get_terms(self.cfg, EventTermCfg).items()
-    for term_name, term_cfg in cfg_items:
+    for term_name, term_cfg in self.cfg.items():
       term_cfg: EventTermCfg | None
       if term_cfg is None:
         print(f"term: {term_name} set to None, skipping...")
@@ -184,6 +190,8 @@ class EventManager(ManagerBase):
         self._mode_class_term_cfgs[term_cfg.mode] = list()
       self._mode_term_names[term_cfg.mode].append(term_name)
       self._mode_term_cfgs[term_cfg.mode].append(term_cfg)
+      if hasattr(term_cfg.func, "reset") and callable(term_cfg.func.reset):
+        self._mode_class_term_cfgs[term_cfg.mode].append(term_cfg)
       if term_cfg.mode == "interval":
         if term_cfg.interval_range_s is None:
           raise ValueError(
@@ -205,7 +213,7 @@ class EventManager(ManagerBase):
         no_trigger = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
         self._reset_term_last_triggered_once.append(no_trigger)
 
-      if term_cfg.func.__name__ == "randomize_field":
+      if term_cfg.domain_randomization:
         field_name = term_cfg.params["field"]
         if field_name not in self._domain_randomization_fields:
           self._domain_randomization_fields.append(field_name)

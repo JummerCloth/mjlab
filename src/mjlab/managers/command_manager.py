@@ -9,11 +9,11 @@ import torch
 from prettytable import PrettyTable
 
 from mjlab.managers.manager_base import ManagerBase, ManagerTermBase
-from mjlab.utils.dataclasses import get_terms
 
 if TYPE_CHECKING:
   from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
   from mjlab.managers.manager_term_config import CommandTermCfg
+  from mjlab.viewer.debug_visualizer import DebugVisualizer
 
 
 class CommandTerm(ManagerTermBase):
@@ -28,11 +28,11 @@ class CommandTerm(ManagerTermBase):
       self.num_envs, device=self.device, dtype=torch.long
     )
 
-  def debug_vis(self, scn):
+  def debug_vis(self, visualizer: "DebugVisualizer") -> None:
     if self.cfg.debug_vis:
-      self._debug_vis_impl(scn)
+      self._debug_vis_impl(visualizer)
 
-  def _debug_vis_impl(self, scn):
+  def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
     pass
 
   @property
@@ -85,7 +85,7 @@ class CommandTerm(ManagerTermBase):
 class CommandManager(ManagerBase):
   _env: ManagerBasedRlEnv
 
-  def __init__(self, cfg: object, env: ManagerBasedRlEnv):
+  def __init__(self, cfg: dict[str, CommandTermCfg], env: ManagerBasedRlEnv):
     self._terms: dict[str, CommandTerm] = dict()
 
     self.cfg = cfg
@@ -104,9 +104,9 @@ class CommandManager(ManagerBase):
     msg += "\n"
     return msg
 
-  def debug_vis(self, scn):
+  def debug_vis(self, visualizer: "DebugVisualizer") -> None:
     for term in self._terms.values():
-      term.debug_vis(scn)
+      term.debug_vis(visualizer)
 
   # Properties.
 
@@ -142,11 +142,11 @@ class CommandManager(ManagerBase):
   def get_term(self, name: str) -> CommandTerm:
     return self._terms[name]
 
-  def _prepare_terms(self):
-    from mjlab.managers.manager_term_config import CommandTermCfg
+  def get_term_cfg(self, name: str) -> CommandTermCfg:
+    return self.cfg[name]
 
-    cfg_items = get_terms(self.cfg, CommandTermCfg).items()
-    for term_name, term_cfg in cfg_items:
+  def _prepare_terms(self):
+    for term_name, term_cfg in self.cfg.items():
       term_cfg: CommandTermCfg | None
       if term_cfg is None:
         print(f"term: {term_name} set to None, skipping...")
@@ -173,7 +173,7 @@ class NullCommandManager:
   def __repr__(self) -> str:
     return "NullCommandManager()"
 
-  def debug_vis(self, scn) -> None:
+  def debug_vis(self, visualizer: "DebugVisualizer") -> None:
     pass
 
   def get_active_iterable_terms(
@@ -191,4 +191,7 @@ class NullCommandManager:
     return None
 
   def get_term(self, name: str) -> None:
+    return None
+
+  def get_term_cfg(self, name: str) -> None:
     return None

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional, Protocol
 import torch
 
 if TYPE_CHECKING:
-  from mjlab.envs import ManagerBasedEnvCfg
+  from mjlab.envs import ManagerBasedRlEnvCfg
 
 
 class VerbosityLevel(IntEnum):
@@ -44,20 +44,25 @@ class Timer:
 
 
 class EnvProtocol(Protocol):
-  device: torch.device
+  """Interface we expect from RL environments, which can be either vanilla
+  `ManagerBasedRlEnv` objects or wrapped with `VideoRecorder`,
+  `RslRlVecEnvWrapper`, etc."""
+
+  num_envs: int
 
   @property
-  def cfg(self) -> ManagerBasedEnvCfg: ...
+  def device(self) -> torch.device | str: ...
 
-  def get_observations(self) -> Any: ...
-  def step(self, actions: torch.Tensor) -> tuple[Any, ...]: ...
-  def reset(self) -> Any: ...
+  @property
+  def cfg(self) -> ManagerBasedRlEnvCfg: ...
 
   @property
   def unwrapped(self) -> Any: ...
 
-  @property
-  def num_envs(self) -> int: ...
+  def get_observations(self) -> Any: ...
+  def step(self, actions: torch.Tensor) -> tuple[Any, ...]: ...
+  def reset(self) -> Any: ...
+  def close(self) -> None: ...
 
 
 class PolicyProtocol(Protocol):
@@ -84,16 +89,14 @@ class BaseViewer(ABC):
     env: EnvProtocol,
     policy: PolicyProtocol,
     frame_rate: float = 30.0,
-    render_all_envs: bool = True,
     verbosity: int = VerbosityLevel.SILENT,
   ):
     self.env = env
     self.policy = policy
     self.frame_rate = frame_rate
     self.frame_time = 1.0 / frame_rate
-    self.render_all_envs = render_all_envs
     self.verbosity = VerbosityLevel(verbosity)
-    self.cfg = getattr(env.cfg, "viewer", None)
+    self.cfg = env.cfg.viewer
 
     # Loop state.
     self._is_paused = False

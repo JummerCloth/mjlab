@@ -1,6 +1,7 @@
 """Tests for go1_constants.py."""
 
 import re
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -11,12 +12,12 @@ from mjlab.entity import Entity
 from mjlab.utils.string import resolve_expr
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def go1_entity() -> Entity:
-  return Entity(go1_constants.GO1_ROBOT_CFG)
+  return Entity(go1_constants.get_go1_robot_cfg())
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def go1_model(go1_entity: Entity) -> mujoco.MjModel:
   return go1_entity.spec.compile()
 
@@ -49,7 +50,7 @@ def test_keyframe_joint_positions(go1_entity, go1_model) -> None:
   """Test that keyframe joint positions match the configuration."""
   key = go1_model.key("init_state")
   expected_joint_pos = go1_constants.INIT_STATE.joint_pos
-  expected_values = resolve_expr(expected_joint_pos, go1_entity.joint_names)
+  expected_values = resolve_expr(expected_joint_pos, go1_entity.joint_names, 0.0)
   for joint_name, expected_value in zip(
     go1_entity.joint_names, expected_values, strict=True
   ):
@@ -94,5 +95,18 @@ def test_go1_entity_creation(go1_entity) -> None:
   assert not go1_entity.is_fixed_base
 
 
-if __name__ == "__main__":
-  pytest.main([__file__, "-v"])
+def test_go1_learned_actuator_network_exists() -> None:
+  """Verify the learned actuator network file exists."""
+  cfg = go1_constants.GO1_LEARNED_ACTUATOR_CFG
+  assert Path(cfg.network_file).exists(), f"Network file not found: {cfg.network_file}"
+
+
+def test_go1_learned_entity_creation() -> None:
+  """Test that Go1 with learned actuators can be created and compiled."""
+  entity = Entity(go1_constants.get_go1_robot_cfg_learned())
+  assert entity.num_actuators == 12
+  assert entity.num_joints == 12
+  assert entity.is_actuated
+  assert not entity.is_fixed_base
+  model = entity.compile()
+  assert model.nu == 12

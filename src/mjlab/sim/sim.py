@@ -3,12 +3,11 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import mujoco
 import mujoco_warp as mjwarp
-import numpy as np
 import warp as wp
 
 from mjlab.sim.randomization import expand_model_fields
 from mjlab.sim.sim_data import WarpBridge
-from mjlab.utils.spec_config import SpecCfg
+from mjlab.utils.nan_guard import NanGuard, NanGuardCfg
 
 # Type aliases for better IDE support while maintaining runtime compatibility
 # At runtime, WarpBridge wraps the actual MJWarp objects.
@@ -40,7 +39,7 @@ _SOLVER_MAP = {
 
 
 @dataclass
-class MujocoCfg(SpecCfg):
+class MujocoCfg:
   """Configuration for MuJoCo simulation parameters."""
 
   # Integrator settings.
@@ -62,42 +61,37 @@ class MujocoCfg(SpecCfg):
   # Other.
   gravity: tuple[float, float, float] = (0, 0, -9.81)
 
-  def edit_spec(self, spec: mujoco.MjSpec) -> None:
-    self.validate()
-
-    attrs = {
-      "jacobian": _JACOBIAN_MAP[self.jacobian],
-      "cone": _CONE_MAP[self.cone],
-      "integrator": _INTEGRATOR_MAP[self.integrator],
-      "solver": _SOLVER_MAP[self.solver],
-      "timestep": self.timestep,
-      "impratio": self.impratio,
-      "gravity": self.gravity,
-      "iterations": self.iterations,
-      "tolerance": self.tolerance,
-      "ls_iterations": self.ls_iterations,
-      "ls_tolerance": self.ls_tolerance,
-    }
-    for k, v in attrs.items():
-      setattr(spec.option, k, v)
-
-
-@dataclass(kw_only=True)
-class RenderCfg:
-  enable_reflections: bool = True
-  enable_shadows: bool = True
-  camera: str | int | None = -1
-  height: int = 240
-  width: int = 320
+  def apply(self, model: mujoco.MjModel) -> None:
+    """Apply configuration settings to a compiled MjModel."""
+    model.opt.jacobian = _JACOBIAN_MAP[self.jacobian]
+    model.opt.cone = _CONE_MAP[self.cone]
+    model.opt.integrator = _INTEGRATOR_MAP[self.integrator]
+    model.opt.solver = _SOLVER_MAP[self.solver]
+    model.opt.timestep = self.timestep
+    model.opt.impratio = self.impratio
+    model.opt.gravity[:] = self.gravity
+    model.opt.iterations = self.iterations
+    model.opt.tolerance = self.tolerance
+    model.opt.ls_iterations = self.ls_iterations
+    model.opt.ls_tolerance = self.ls_tolerance
 
 
 @dataclass(kw_only=True)
 class SimulationCfg:
   nconmax: int | None = None
+  """Number of contacts to allocate per world.
+  
+  Contacts exist in large heterogenous arrays: one world may have more than nconmax
+  contacts. If None, a heuristic value is used."""
   njmax: int | None = None
+  """Number of constraints to allocate per world.
+  
+  Constraint arrays are batched by world: no world may have more than njmax
+  constraints. If None, a heuristic value is used."""
   ls_parallel: bool = True  # Boosts perf quite noticeably.
+  contact_sensor_maxmatch: int = 64
   mujoco: MujocoCfg = field(default_factory=MujocoCfg)
-  render: RenderCfg = field(default_factory=RenderCfg)
+  nan_guard: NanGuardCfg = field(default_factory=NanGuardCfg)
 
 
 class Simulation:
@@ -111,13 +105,17 @@ class Simulation:
     self.wp_device = wp.get_device(self.device)
     self.num_envs = num_envs
 
+    # MuJoCo model and data.
     self._mj_model = model
+    cfg.mujoco.apply(self._mj_model)
     self._mj_data = mujoco.MjData(model)
     mujoco.mj_forward(self._mj_model, self._mj_data)
 
+    # MJWarp model and data.
     with wp.ScopedDevice(self.wp_device):
       self._wp_model = mjwarp.put_model(self._mj_model)
       self._wp_model.opt.ls_parallel = cfg.ls_parallel
+      self._wp_model.opt.contact_sensor_maxmatch = cfg.contact_sensor_maxmatch
 
       self._wp_data = mjwarp.put_data(
         self._mj_model,
@@ -135,35 +133,19 @@ class Simulation:
     )
     self.create_graph()
 
-    self._mj_model.vis.global_.offheight = self.cfg.render.height
-    self._mj_model.vis.global_.offwidth = self.cfg.render.width
-    if not self.cfg.render.enable_shadows:
-      self._mj_model.light_castshadow[:] = False
-    if not self.cfg.render.enable_reflections:
-      self._mj_model.mat_reflectance[:] = 0.0
-
-    self._camera = self.cfg.render.camera or -1
-    self._renderer: mujoco.Renderer | None = None
-
-  def initialize_renderer(self) -> None:
-    if self._renderer is not None:
-      raise RuntimeError(
-        "Renderer is already initialized. Call 'close()' first to reinitialize."
-      )
-    self._renderer = mujoco.Renderer(
-      model=self._mj_model, height=self.cfg.render.height, width=self.cfg.render.width
-    )
+    self.nan_guard = NanGuard(cfg.nan_guard, self.num_envs, self._mj_model)
 
   def create_graph(self) -> None:
     self.step_graph = None
     self.forward_graph = None
     if self.use_cuda_graph:
-      with wp.ScopedCapture() as capture:
-        mjwarp.step(self.wp_model, self.wp_data)
-      self.step_graph = capture.graph
-      with wp.ScopedCapture() as capture:
-        mjwarp.forward(self.wp_model, self.wp_data)
-      self.forward_graph = capture.graph
+      with wp.ScopedDevice(self.wp_device):
+        with wp.ScopedCapture() as capture:
+          mjwarp.step(self.wp_model, self.wp_data)
+        self.step_graph = capture.graph
+        with wp.ScopedCapture() as capture:
+          mjwarp.forward(self.wp_model, self.wp_data)
+        self.forward_graph = capture.graph
 
   # Properties.
 
@@ -191,26 +173,16 @@ class Simulation:
   def model(self) -> "ModelBridge":
     return cast("ModelBridge", self._model_bridge)
 
-  @property
-  def renderer(self) -> mujoco.Renderer:
-    if self._renderer is None:
-      raise ValueError("Renderer not initialized. Call 'initialize_renderer()' first.")
-
-    return self._renderer
-
   # Methods.
 
-  def expand_model_fields(self, fields: list[str]) -> None:
+  def expand_model_fields(self, fields: tuple[str, ...]) -> None:
     """Expand model fields to support per-environment parameters."""
     invalid_fields = [f for f in fields if not hasattr(self._mj_model, f)]
     if invalid_fields:
       raise ValueError(f"Fields not found in model: {invalid_fields}")
 
-    expand_model_fields(self._wp_model, self.num_envs, fields)
-
-  def reset(self) -> None:
-    # TODO(kevin): Should we be doing anything here?
-    pass
+    expand_model_fields(self._wp_model, self.num_envs, list(fields))
+    self._model_bridge.clear_cache()
 
   def forward(self) -> None:
     with wp.ScopedDevice(self.wp_device):
@@ -221,26 +193,8 @@ class Simulation:
 
   def step(self) -> None:
     with wp.ScopedDevice(self.wp_device):
-      if self.use_cuda_graph and self.step_graph is not None:
-        wp.capture_launch(self.step_graph)
-      else:
-        mjwarp.step(self.wp_model, self.wp_data)
-
-  def update_render(self) -> None:
-    if self._renderer is None:
-      raise ValueError("Renderer not initialized. Call 'initialize_renderer()' first.")
-
-    mjwarp.get_data_into(self._mj_data, self._mj_model, self._wp_data)
-    mujoco.mj_forward(self._mj_model, self._mj_data)
-    self._renderer.update_scene(data=self._mj_data, camera=self.cfg.render.camera)
-
-  def render(self) -> np.ndarray:
-    if self._renderer is None:
-      raise ValueError("Renderer not initialized. Call 'initialize_renderer()' first.")
-
-    return self._renderer.render()
-
-  def close(self) -> None:
-    if self._renderer is not None:
-      self._renderer.close()
-      self._renderer = None
+      with self.nan_guard.watch(self.data):
+        if self.use_cuda_graph and self.step_graph is not None:
+          wp.capture_launch(self.step_graph)
+        else:
+          mjwarp.step(self.wp_model, self.wp_data)

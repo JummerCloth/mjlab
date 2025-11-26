@@ -5,7 +5,8 @@
 
 ## TL;DR
 
-Most Isaac Lab task configs work in mjlab with only minor tweaks! The manager-based API is nearly identical; just a few syntax changes.
+Most Isaac Lab task configs work in mjlab with only minor tweaks! The
+manager-based API is nearly identical; just a few syntax changes.
 
 ## Key Differences
 
@@ -21,11 +22,14 @@ mjlab:
 from mjlab.envs import ManagerBasedRlEnvCfg
 ```
 
-**Note:** We use consistent `CamelCase` naming conventions (e.g., `RlEnv` instead of `RLEnv`).
+**Note:** We use consistent `CamelCase` naming conventions (e.g., `RlEnv`
+instead of `RLEnv`).
 
-### 2. Configuration Classes
+### 2. Configuration Structure
 
-Isaac Lab uses `@configclass`, mjlab uses Python's standard `@dataclass` with a `term()` helper.
+Isaac Lab uses nested `@configclass` classes for organizing manager terms. mjlab
+uses dictionaries instead, which provides more flexibility for creating config
+variants.
 
 **Isaac Lab:**
 ```python
@@ -47,25 +51,34 @@ class RewardsCfg:
 
 **mjlab:**
 ```python
-@dataclass
-class RewardCfg:
-    motion_global_root_pos: RewTerm = term(
-        RewTerm,
+rewards = {
+    "motion_global_anchor_pos": RewardTermCfg(
         func=mdp.motion_global_anchor_position_error_exp,
         weight=0.5,
         params={"command_name": "motion", "std": 0.3},
-    )
-    motion_global_root_ori: RewTerm = term(
-        RewTerm,
+    ),
+    "motion_global_anchor_ori": RewardTermCfg(
         func=mdp.motion_global_anchor_orientation_error_exp,
         weight=0.5,
         params={"command_name": "motion", "std": 0.4},
-    )
+    ),
+}
+
+cfg = ManagerBasedRlEnvCfg(
+    scene=scene,
+    rewards=rewards,
+    # ... other manager configs
+)
 ```
+
+This applies to all manager configs: `rewards`, `observations`, `actions`,
+`commands`, `terminations`, `events`, and `curriculum`.
 
 ### 3. Scene Configuration
 
-Scene setup is more streamlined in mjlab—no Omniverse/USD scene graphs. Instead, you configure materials, lights, and textures directly through MuJoCo's MjSpec modifiers.
+Scene setup is more streamlined in mjlab—no Omniverse/USD scene graphs. Instead,
+you configure materials, lights, and textures directly through MuJoCo's MjSpec
+modifiers.
 
 **Isaac Lab:**
 ```python
@@ -111,7 +124,7 @@ class MySceneCfg(InteractiveSceneCfg):
 **mjlab:**
 ```python
 from mjlab.scene import SceneCfg
-from mjlab.asset_zoo.robots.unitree_g1.g1_constants import G1_ROBOT_CFG
+from mjlab.asset_zoo.robots.unitree_g1.g1_constants import get_g1_robot_cfg
 from mjlab.utils.spec_config import ContactSensorCfg
 from mjlab.terrains import TerrainImporterCfg
 
@@ -126,7 +139,7 @@ self_collision_sensor = ContactSensorCfg(
 )
 
 # Add sensor to robot config
-g1_cfg = replace(G1_ROBOT_CFG, sensors=(self_collision_sensor,))
+g1_cfg = replace(get_g1_robot_cfg(), sensors=(self_collision_sensor,))
 
 # Create scene
 SCENE_CFG = SceneCfg(
@@ -137,7 +150,9 @@ SCENE_CFG = SceneCfg(
 
 **Key changes:**
 - No USD scene graph or `prim_path` management
-- Materials, lights, and textures configured via MuJoCo's MjSpec. See our [`spec_config.py`](https://github.com/mujocolab/mjlab/blob/main/src/mjlab/utils/spec_config.py) for dataclass-based modifiers that handle MjSpec changes for you.
+- Materials, lights, and textures configured via MuJoCo's MjSpec. See our
+  [`spec_config.py`](https://github.com/mujocolab/mjlab/blob/main/src/mjlab/utils/spec_config.py)
+  for dataclass-based modifiers that handle MjSpec changes for you.
 
 ## Complete Example Comparison
 
@@ -154,9 +169,15 @@ Compare these to see how similar the APIs are in practice.
 ## Tips for Migration
 
 1. **Check the examples** - Look at our reference tasks in `src/mjlab/tasks/`
-2. **Ask questions** - [Open a discussion](https://github.com/mujocolab/mjlab/discussions) if you get stuck
-3. **MuJoCo differences** - Some Isaac Sim features (fancy rendering, USD workflows) don't have direct equivalents
+2. **Ask questions** -
+   [Open a discussion](https://github.com/mujocolab/mjlab/discussions) if you
+   get stuck
+3. **MuJoCo differences** - Some Isaac Sim features (fancy rendering, USD
+   workflows) don't have direct equivalents
 
 ## Need Help?
 
-If something in your Isaac Lab config doesn't translate cleanly, please [open an issue](https://github.com/mujocolab/mjlab/issues) or [start a discussion](https://github.com/mujocolab/mjlab/discussions). We're actively improving migration support!
+If something in your Isaac Lab config doesn't translate cleanly, please
+[open an issue](https://github.com/mujocolab/mjlab/issues) or
+[start a discussion](https://github.com/mujocolab/mjlab/discussions). We're
+actively improving migration support!
