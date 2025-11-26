@@ -75,9 +75,9 @@ class CommandsCfg:
     heading_control_stiffness=0.5,
     debug_vis=True,
     ranges=mdp.UniformVelocityCommandCfg.Ranges(
-      lin_vel_x=(-1.0, 1.0),
-      lin_vel_y=(-0.5, 0.5),
-      ang_vel_z=(-1.0, 1.0),
+      lin_vel_x=(-0.25, 0.25), #(-1.0, 1.0),
+      lin_vel_y=(-0.1, 0.1), #(-1.0, 1.0),
+      ang_vel_z=(-0.5, 0.5),
       heading=(-math.pi, math.pi),
     ),
   )
@@ -178,7 +178,7 @@ class RewardCfg:
     RewardTerm,
     func=mdp.track_lin_vel_exp,
     weight=1.0,
-    params={"command_name": "twist", "std": math.sqrt(0.25)},
+    params={"command_name": "twist", "std": 0.1},  #math.sqrt(0.25)},
   )
   track_ang_vel_exp: RewardTerm = term(
     RewardTerm,

@@ -47,10 +47,20 @@ class ViserViewer(BaseViewer):
     self._contact_point_handle: viser.BatchedGlbHandle | None = None
     self._contact_force_shaft_handle: viser.BatchedGlbHandle | None = None
     self._contact_force_head_handle: viser.BatchedGlbHandle | None = None
+    # Command visualization handles
+    self._cmd_lin_shaft_handle: viser.BatchedGlbHandle | None = None
+    self._cmd_lin_head_handle: viser.BatchedGlbHandle | None = None
+    self._cmd_ang_shaft_handle: viser.BatchedGlbHandle | None = None
+    self._cmd_ang_head_handle: viser.BatchedGlbHandle | None = None
+    self._actual_lin_shaft_handle: viser.BatchedGlbHandle | None = None
+    self._actual_lin_head_handle: viser.BatchedGlbHandle | None = None
+    self._actual_ang_shaft_handle: viser.BatchedGlbHandle | None = None
+    self._actual_ang_head_handle: viser.BatchedGlbHandle | None = None
     self._threadpool = ThreadPoolExecutor(max_workers=1)
     self._batch_size = self.env.num_envs
     self._show_contact_points = False
     self._show_contact_forces = False
+    self._show_commands = False
     self._meansize_override: float | None = None
     self._camera_tracking = False
     self._camera_distance = 3.0
@@ -166,6 +176,82 @@ class ViserViewer(BaseViewer):
         @self._server.on_client_connect
         def _(client: viser.ClientHandle) -> None:
           client.camera.fov = np.radians(slider_fov.value)
+
+      # Command visualization and control settings
+      with self._server.gui.add_folder("Commands"):
+        # Display current commands as text
+        self._command_display = self._server.gui.add_html(
+          "<div style='font-size: 0.9em; line-height: 1.5; padding: 0.5em;'>"
+          "<strong>Current Commands:</strong><br/>"
+          "No velocity commands available"
+          "</div>"
+        )
+
+        # Manual control mode
+        self._manual_control_cb = self._server.gui.add_checkbox(
+          "Manual Control",
+          initial_value=False,
+          hint="Override automatic commands with manual sliders",
+        )
+
+        # Manual control sliders
+        self._manual_forward_slider = self._server.gui.add_slider(
+          "Forward (m/s)",
+          min=-0.5,
+          max=0.5,
+          step=0.05,
+          initial_value=0.0,
+          disabled=True,
+        )
+        self._manual_lateral_slider = self._server.gui.add_slider(
+          "Lateral (m/s)",
+          min=-0.3,
+          max=0.3,
+          step=0.05,
+          initial_value=0.0,
+          disabled=True,
+        )
+        self._manual_turn_slider = self._server.gui.add_slider(
+          "Turn (rad/s)",
+          min=-2.0,
+          max=2.0,
+          step=0.1,
+          initial_value=0.0,
+          disabled=True,
+        )
+
+        @self._manual_control_cb.on_update
+        def _(_) -> None:
+          # Enable/disable sliders based on manual control mode
+          is_manual = self._manual_control_cb.value
+          self._manual_forward_slider.disabled = not is_manual
+          self._manual_lateral_slider.disabled = not is_manual
+          self._manual_turn_slider.disabled = not is_manual
+
+        # Arrow visualization toggle
+        cb_show_command_arrows = self._server.gui.add_checkbox(
+          "Show Arrow Visualization",
+          initial_value=False,
+          hint="Visualize velocity commands as arrows (for debugging)",
+        )
+
+        @cb_show_command_arrows.on_update
+        def _(_) -> None:
+          self._show_commands = cb_show_command_arrows.value
+          # Hide all command handles if disabled
+          if not self._show_commands:
+            for handle in [
+              self._cmd_lin_shaft_handle,
+              self._cmd_lin_head_handle,
+              self._cmd_ang_shaft_handle,
+              self._cmd_ang_head_handle,
+              self._actual_lin_shaft_handle,
+              self._actual_lin_head_handle,
+              self._actual_ang_shaft_handle,
+              self._actual_ang_head_handle,
+            ]:
+              if handle is not None:
+                handle.visible = False
 
       # Environment selection if multiple environments
       if self.env.num_envs > 1:
@@ -537,9 +623,13 @@ class ViserViewer(BaseViewer):
     # Update counter
     self._counter += 1
 
+    # Apply manual commands if enabled
+    self._apply_manual_commands()
+
     # Update status display and reward plots less frequently.
     if self._counter % 10 == 0:
       self._update_status_display()
+      self._update_command_display()
       if self._reward_plotter is not None and not self._is_paused:
         terms = list(
           self.env.unwrapped.reward_manager.get_active_iterable_terms(self._env_idx)
@@ -646,6 +736,10 @@ class ViserViewer(BaseViewer):
         if contact_data is not None and env_origin is not None:
           self._update_contact_visualization(contact_data, env_origin)
 
+        # Update command visualization
+        if self._show_commands:
+          self._update_command_visualization(body_xpos, body_xmat)
+
         # Synchronize camera tracking if enabled.
         if camera_lookat is not None:
           self._update_camera_tracking(camera_lookat)
@@ -678,6 +772,97 @@ class ViserViewer(BaseViewer):
   def is_running(self) -> bool:
     """Check if viewer is running."""
     return True  # Viser runs until process is killed
+
+  def _apply_manual_commands(self) -> None:
+    """Apply manual commands if manual control is enabled."""
+    if not hasattr(self, "_manual_control_cb") or not self._manual_control_cb.value:
+      return
+
+    # Check if environment has velocity commands
+    if not hasattr(self.env.unwrapped, "command_manager"):
+      return
+
+    cmd_manager = self.env.unwrapped.command_manager
+    if "twist" not in cmd_manager._terms:
+      return
+
+    cmd_term = cmd_manager.get_term("twist")
+    if cmd_term is None:
+      return
+
+    # Set manual commands for all environments
+    cmd_term.vel_command_b[:, 0] = self._manual_forward_slider.value  # forward
+    cmd_term.vel_command_b[:, 1] = self._manual_lateral_slider.value  # lateral
+    cmd_term.vel_command_b[:, 2] = self._manual_turn_slider.value  # turn
+
+  def _update_command_display(self) -> None:
+    """Update the command display with current velocity commands."""
+    if not hasattr(self, "_command_display"):
+      return
+
+    # Check if environment has velocity commands
+    if not hasattr(self.env.unwrapped, "command_manager"):
+      self._command_display.content = (
+        "<div style='font-size: 0.9em; line-height: 1.5; padding: 0.5em;'>"
+        "<strong>Current Commands:</strong><br/>"
+        "No velocity commands available"
+        "</div>"
+      )
+      return
+
+    cmd_manager = self.env.unwrapped.command_manager
+    if "twist" not in cmd_manager._terms:
+      self._command_display.content = (
+        "<div style='font-size: 0.9em; line-height: 1.5; padding: 0.5em;'>"
+        "<strong>Current Commands:</strong><br/>"
+        "No velocity commands available"
+        "</div>"
+      )
+      return
+
+    cmd_term = cmd_manager.get_term("twist")
+    if cmd_term is None:
+      return
+
+    # Get command for the currently selected environment
+    cmd = cmd_term.vel_command_b[self._env_idx].cpu().numpy()
+    forward = cmd[0]
+    lateral = cmd[1]
+    turn = cmd[2]
+
+    # Get actual velocities for comparison
+    from mjlab.entity.entity import Entity
+
+    robot: Entity = self.env.unwrapped.scene[cmd_term.cfg.asset_name]
+    actual_vel = robot.data.root_link_lin_vel_b[self._env_idx].cpu().numpy()
+    actual_ang = robot.data.root_link_ang_vel_b[self._env_idx].cpu().numpy()
+
+    # Format the display
+    mode_str = (
+      "<span style='color: #ff6b6b; font-weight: bold;'>MANUAL</span>"
+      if hasattr(self, "_manual_control_cb") and self._manual_control_cb.value
+      else "<span style='color: #51cf66;'>AUTO</span>"
+    )
+
+    self._command_display.content = f"""
+      <div style='font-size: 0.85em; line-height: 1.6; padding: 0.5em; 
+                  background: #f8f9fa; border-radius: 4px; 
+                  font-family: monospace;'>
+        <strong>Commands (Env {self._env_idx})</strong> [{mode_str}]<br/>
+        <div style='margin-top: 0.3em;'>
+          <strong>Commanded:</strong><br/>
+          &nbsp;&nbsp;Forward: {forward:+.3f} m/s<br/>
+          &nbsp;&nbsp;Lateral: {lateral:+.3f} m/s<br/>
+          &nbsp;&nbsp;Turn: {turn:+.3f} rad/s<br/>
+        </div>
+        <div style='margin-top: 0.3em;'>
+          <strong>Actual:</strong><br/>
+          &nbsp;&nbsp;Forward: {actual_vel[0]:+.3f} m/s<br/>
+          &nbsp;&nbsp;Lateral: {actual_vel[1]:+.3f} m/s<br/>
+          &nbsp;&nbsp;Turn: {actual_ang[2]:+.3f} rad/s<br/>
+        </div>
+      </div>
+    """
 
   def _update_status_display(self) -> None:
     """Update the HTML status display."""
@@ -910,6 +1095,266 @@ class ViserViewer(BaseViewer):
       assert self._contact_force_head_handle is not None
       self._contact_force_shaft_handle.visible = False
       self._contact_force_head_handle.visible = False
+
+  def _update_command_visualization(
+    self, body_xpos: np.ndarray, body_xmat: np.ndarray
+  ) -> None:
+    """Update command velocity visualization with arrows.
+
+    Args:
+      body_xpos: Body positions array of shape (batch_size, nbody, 3)
+      body_xmat: Body rotation matrices array of shape (batch_size, nbody, 3, 3)
+    """
+    # Check if environment has a command manager with velocity commands
+    if not hasattr(self.env.unwrapped, "command_manager"):
+      return
+
+    cmd_manager = self.env.unwrapped.command_manager
+    if "twist" not in cmd_manager._terms:
+      return
+
+    cmd_term = cmd_manager.get_term("twist")
+    if cmd_term is None:
+      return
+
+    # Get robot entity to find root body
+    from mjlab.entity.entity import Entity
+
+    robot: Entity = self.env.unwrapped.scene[cmd_term.cfg.asset_name]
+
+    # Get commanded and actual velocities
+    cmd_vel = cmd_term.vel_command_b.cpu().numpy()  # (batch_size, 3) [vx, vy, wz]
+    actual_lin_vel = robot.data.root_link_lin_vel_b.cpu().numpy()  # (batch_size, 3)
+    actual_ang_vel = robot.data.root_link_ang_vel_b.cpu().numpy()  # (batch_size, 3)
+
+    # Get root body position and orientation for each environment
+    root_body_id = 1  # Typically body 1 is the root body (after world)
+    base_positions = body_xpos[:, root_body_id, :]  # (batch_size, 3)
+    base_rotmats = body_xmat[:, root_body_id, :, :]  # (batch_size, 3, 3)
+
+    # Visualization parameters (matching velocity_command.py)
+    scale = 0.75
+    z_offset = 0.2
+    arrow_width = 0.015
+
+    # Collect arrow data for all environments
+    cmd_lin_positions = []
+    cmd_lin_orientations = []
+    cmd_lin_lengths = []
+    cmd_ang_positions = []
+    cmd_ang_orientations = []
+    cmd_ang_lengths = []
+    actual_lin_positions = []
+    actual_lin_orientations = []
+    actual_lin_lengths = []
+    actual_ang_positions = []
+    actual_ang_orientations = []
+    actual_ang_lengths = []
+
+    for i in range(self._batch_size):
+      base_pos = base_positions[i]
+      base_mat = base_rotmats[i]
+
+      # Transform local offset to world
+      offset_local = np.array([0, 0, z_offset]) * scale
+      offset_world = base_mat @ offset_local
+
+      # Commanded linear velocity arrow (blue)
+      cmd_lin_vec = np.array([cmd_vel[i, 0], cmd_vel[i, 1], 0]) * scale
+      cmd_lin_length = np.linalg.norm(cmd_lin_vec)
+      if cmd_lin_length > 1e-4:
+        cmd_lin_vec_world = base_mat @ cmd_lin_vec
+        cmd_lin_dir = cmd_lin_vec_world / np.linalg.norm(cmd_lin_vec_world)
+        arrow_start = base_pos + offset_world
+        cmd_lin_positions.append(arrow_start)
+        # Create rotation from z-axis to arrow direction
+        rot_mat = self._rotation_matrix_from_vectors(np.array([0, 0, 1]), cmd_lin_dir)
+        cmd_lin_orientations.append(vtf.SO3.from_matrix(rot_mat).wxyz)
+        cmd_lin_lengths.append(cmd_lin_length)
+
+      # Commanded angular velocity arrow (green)
+      cmd_ang_vec = np.array([0, 0, cmd_vel[i, 2]]) * scale
+      cmd_ang_length = abs(cmd_vel[i, 2]) * scale
+      if cmd_ang_length > 1e-4:
+        cmd_ang_vec_world = base_mat @ cmd_ang_vec
+        cmd_ang_dir = cmd_ang_vec_world / np.linalg.norm(cmd_ang_vec_world)
+        arrow_start = base_pos + offset_world
+        cmd_ang_positions.append(arrow_start)
+        rot_mat = self._rotation_matrix_from_vectors(np.array([0, 0, 1]), cmd_ang_dir)
+        cmd_ang_orientations.append(vtf.SO3.from_matrix(rot_mat).wxyz)
+        cmd_ang_lengths.append(cmd_ang_length)
+
+      # Actual linear velocity arrow (cyan)
+      actual_lin_vec = np.array([actual_lin_vel[i, 0], actual_lin_vel[i, 1], 0]) * scale
+      actual_lin_length = np.linalg.norm(actual_lin_vec)
+      if actual_lin_length > 1e-4:
+        actual_lin_vec_world = base_mat @ actual_lin_vec
+        actual_lin_dir = actual_lin_vec_world / np.linalg.norm(actual_lin_vec_world)
+        arrow_start = base_pos + offset_world
+        actual_lin_positions.append(arrow_start)
+        rot_mat = self._rotation_matrix_from_vectors(np.array([0, 0, 1]), actual_lin_dir)
+        actual_lin_orientations.append(vtf.SO3.from_matrix(rot_mat).wxyz)
+        actual_lin_lengths.append(actual_lin_length)
+
+      # Actual angular velocity arrow (light green)
+      actual_ang_vec = np.array([0, 0, actual_ang_vel[i, 2]]) * scale
+      actual_ang_length = abs(actual_ang_vel[i, 2]) * scale
+      if actual_ang_length > 1e-4:
+        actual_ang_vec_world = base_mat @ actual_ang_vec
+        actual_ang_dir = actual_ang_vec_world / np.linalg.norm(actual_ang_vec_world)
+        arrow_start = base_pos + offset_world
+        actual_ang_positions.append(arrow_start)
+        rot_mat = self._rotation_matrix_from_vectors(np.array([0, 0, 1]), actual_ang_dir)
+        actual_ang_orientations.append(vtf.SO3.from_matrix(rot_mat).wxyz)
+        actual_ang_lengths.append(actual_ang_length)
+
+    # Create arrow meshes and update handles
+    # Colors: commanded (darker blue/green), actual (cyan/light green)
+    self._create_or_update_arrows(
+      cmd_lin_positions,
+      cmd_lin_orientations,
+      cmd_lin_lengths,
+      (51, 51, 153),  # Dark blue
+      "cmd_lin",
+      arrow_width,
+    )
+    self._create_or_update_arrows(
+      cmd_ang_positions,
+      cmd_ang_orientations,
+      cmd_ang_lengths,
+      (51, 153, 51),  # Dark green
+      "cmd_ang",
+      arrow_width,
+    )
+    self._create_or_update_arrows(
+      actual_lin_positions,
+      actual_lin_orientations,
+      actual_lin_lengths,
+      (0, 153, 255),  # Cyan
+      "actual_lin",
+      arrow_width,
+    )
+    self._create_or_update_arrows(
+      actual_ang_positions,
+      actual_ang_orientations,
+      actual_ang_lengths,
+      (0, 255, 102),  # Light green
+      "actual_ang",
+      arrow_width,
+    )
+
+  def _create_or_update_arrows(
+    self,
+    positions: list,
+    orientations: list,
+    lengths: list,
+    color_rgb: tuple[int, int, int],
+    arrow_type: str,
+    width: float,
+  ) -> None:
+    """Create or update arrow visualization.
+
+    Args:
+      positions: List of arrow start positions
+      orientations: List of arrow orientations (wxyz quaternions)
+      lengths: List of arrow lengths
+      color_rgb: RGB color (0-255)
+      arrow_type: Type identifier ('cmd_lin', 'cmd_ang', 'actual_lin', 'actual_ang')
+      width: Arrow width
+    """
+    if len(positions) == 0:
+      # Hide handles if no arrows
+      shaft_handle = getattr(self, f"_{arrow_type}_shaft_handle")
+      head_handle = getattr(self, f"_{arrow_type}_head_handle")
+      if shaft_handle is not None:
+        shaft_handle.visible = False
+      if head_handle is not None:
+        head_handle.visible = False
+      return
+
+    positions_arr = np.array(positions)
+    orientations_arr = np.array(orientations)
+    lengths_arr = np.array(lengths)
+
+    # Shaft and head scales
+    shaft_scales = np.column_stack([
+      np.full(len(lengths), width),
+      np.full(len(lengths), width),
+      lengths_arr * 0.8,  # Shaft is 80% of total length
+    ])
+    head_scales = np.column_stack([
+      np.full(len(lengths), width * 3),  # Head is wider
+      np.full(len(lengths), width * 3),
+      lengths_arr * 0.2,  # Head is 20% of total length
+    ])
+
+    # Head positions are offset along arrow direction (80% of length)
+    # Convert quaternions to rotation matrices and apply offset
+    head_positions = []
+    for i in range(len(positions_arr)):
+      rot_mat = vtf.SO3(wxyz=orientations_arr[i]).as_matrix()
+      offset_z = rot_mat @ np.array([0, 0, lengths_arr[i] * 0.8])
+      head_positions.append(positions_arr[i] + offset_z)
+    head_positions = np.array(head_positions)
+
+    # Convert color to 0-1 range
+    color_01 = [c / 255.0 for c in color_rgb]
+
+    # Get or create shaft handle
+    shaft_handle_name = f"_{arrow_type}_shaft_handle"
+    shaft_handle = getattr(self, shaft_handle_name)
+
+    if shaft_handle is None:
+      # Create shaft mesh (cylinder)
+      shaft_mesh = trimesh.creation.cylinder(radius=0.4, height=1.0)
+      shaft_mesh.apply_translation([0, 0, 0.5])
+      shaft_mesh.visual = trimesh.visual.TextureVisuals(
+        material=trimesh.visual.material.PBRMaterial(baseColorFactor=color_01 + [0.8])
+      )
+      shaft_handle = self._server.scene.add_batched_meshes_trimesh(
+        f"/commands/{arrow_type}/shaft",
+        shaft_mesh,
+        batched_wxyzs=orientations_arr,
+        batched_positions=positions_arr,
+        batched_scales=shaft_scales,
+        lod="off",
+        visible=True,
+        cast_shadow=False,
+      )
+      setattr(self, shaft_handle_name, shaft_handle)
+    else:
+      shaft_handle.batched_positions = positions_arr
+      shaft_handle.batched_wxyzs = orientations_arr
+      shaft_handle.batched_scales = shaft_scales
+      shaft_handle.visible = True
+
+    # Get or create head handle
+    head_handle_name = f"_{arrow_type}_head_handle"
+    head_handle = getattr(self, head_handle_name)
+
+    if head_handle is None:
+      # Create head mesh (cone)
+      head_mesh = trimesh.creation.cone(radius=1.0, height=1.5, sections=8)
+      head_mesh.apply_translation([0, 0, 0.75])
+      head_mesh.visual = trimesh.visual.TextureVisuals(
+        material=trimesh.visual.material.PBRMaterial(baseColorFactor=color_01 + [0.8])
+      )
+      head_handle = self._server.scene.add_batched_meshes_trimesh(
+        f"/commands/{arrow_type}/head",
+        head_mesh,
+        batched_wxyzs=orientations_arr,
+        batched_positions=head_positions,
+        batched_scales=head_scales,
+        lod="off",
+        visible=True,
+        cast_shadow=False,
+      )
+      setattr(self, head_handle_name, head_handle)
+    else:
+      head_handle.batched_positions = head_positions
+      head_handle.batched_wxyzs = orientations_arr
+      head_handle.batched_scales = head_scales
+      head_handle.visible = True
 
   def _update_camera_tracking(self, lookat: np.ndarray) -> None:
     """Update camera position to track the specified lookat point.

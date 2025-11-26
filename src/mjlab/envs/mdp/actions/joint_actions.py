@@ -95,7 +95,21 @@ class JointPositionAction(JointAction):
     super().__init__(cfg=cfg, env=env)
 
     if cfg.use_default_offset:
-      self._offset = self._asset.data.default_joint_pos[:, self._actuator_ids].clone()
+      # CRITICAL FIX: Map actuator names to their corresponding joint indices
+      # self._actuator_ids are local indices [0,1,2,...] into actuator list
+      # but default_joint_pos is indexed by ALL joints (including driven joints)
+      # We need to find which joint index corresponds to each actuator
+      joint_ids_for_actuators = []
+      for act_name in self._actuator_names:
+        # Actuator name matches joint name
+        try:
+          joint_idx = self._asset.joint_names.index(act_name)
+          joint_ids_for_actuators.append(joint_idx)
+        except ValueError:
+          raise ValueError(f"Actuator '{act_name}' not found in joint names")
+      
+      joint_ids_tensor = torch.tensor(joint_ids_for_actuators, device=self.device, dtype=torch.long)
+      self._offset = self._asset.data.default_joint_pos[:, joint_ids_tensor].clone()
 
   def apply_actions(self):
     self._asset.write_joint_position_target_to_sim(

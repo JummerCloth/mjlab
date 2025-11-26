@@ -1,0 +1,111 @@
+Category,Feature,MJX Support,mjlab Support,Status,Notes,Migration Priority
+Core Architecture,Modular Environment System,Yes,Yes,FULL,"Both use registry-based env management. mjlab uses manager-based system instead of decorator pattern",High
+Core Architecture,Configuration System,Yes (Gin),Yes (Dataclass),PARTIAL,"mjlab uses Python dataclasses instead of Gin. More Pythonic but requires code refactoring",High
+Core Architecture,Training Framework Integration,Yes (RSL-RL),Yes (RSL-RL),FULL,Both integrate with RSL-RL for PPO training,High
+Core Architecture,Physics Backend,Yes (MJX/JAX),Yes (MuJoCo Warp),DIFFERENT,"mjlab uses MuJoCo Warp (GPU-accelerated) instead of MJX. Different compilation backend",High
+Core Architecture,JIT Compilation,Yes (JAX),No (PyTorch),MISSING,"mjlab uses PyTorch instead of JAX. No automatic JIT compilation",Medium
+Training Algorithms,PPO Implementation,Yes,Yes,FULL,Both use RSL-RL PPO with configurable hyperparameters,High
+Training Algorithms,Actor-Critic Architecture,Yes,Yes,FULL,Both support configurable hidden layers and activations,High
+Training Algorithms,Recurrent Neural Networks,Yes (LSTM/GRU),No,MISSING,"mjlab doesn't support RNN/LSTM in policy networks",Low
+Training Algorithms,Symmetry Augmentation,Yes,No,MISSING,"mjlab doesn't have mirror loss or symmetric trajectory generation",Low
+Training Algorithms,Empirical Normalization,Yes,Yes,PARTIAL,"mjlab has observation normalization but different implementation",Medium
+Training Algorithms,Gradient Clipping,Yes,Yes,FULL,Both support max_grad_norm parameter,High
+Environments,Task Variety,27+ specialized envs,2 base tasks,PARTIAL,"mjlab has velocity and tracking tasks. Missing specialized envs (crawl, climb, stair, box, chair, etc)",Medium
+Environments,Multi-Robot Support,Yes (ToddlerBot),Yes (G1/Go1/ToddlerBot),EXPANDED,"mjlab supports more robots out of box",High
+Reward System,Modular Reward Framework,Yes,Yes,FULL,"Both have pluggable reward systems with dynamic registration",High
+Reward System,Curriculum Reward Scaling,Yes,Yes,FULL,Both support time-based reward weight adjustment,High
+Reward System,DeepMimic Rewards,Yes,No,MISSING,"mjlab missing DeepMimic-specific rewards (body_quat, site_pos tracking)",Medium
+Reward System,Velocity Tracking,Yes,Yes,FULL,Both have linear and angular velocity tracking rewards,High
+Reward System,Energy Efficiency,Yes,Yes,FULL,Both have torque-based power consumption penalties,Medium
+Reward System,Action Smoothness,Yes,Yes,FULL,Both penalize action rate changes,Medium
+Reward System,Posture/Pose Rewards,Yes,Yes,FULL,"mjlab has posture reward with configurable std per joint",High
+Reward System,Exponential vs MSE Rewards,Yes,Partial,PARTIAL,"mjlab has exponential pose tracking but not configurable per reward type",Medium
+Observation Space,Observation Groups,Yes,Yes,FULL,"mjlab has policy/critic observation groups",High
+Observation Space,Frame Stacking,Yes (15 frames),No,MISSING,"mjlab doesn't support temporal observation history/frame stacking",High
+Observation Space,Privileged Observations,Yes,Yes,FULL,Both support asymmetric teacher-student information,High
+Observation Space,Motor State,Yes,Yes,FULL,Both observe joint positions and velocities,High
+Observation Space,IMU Observations,Yes,Yes,PARTIAL,"Both have torso angular velocity and orientation. mjlab has simpler noise model",Medium
+Observation Space,Command Observations,Yes,Yes,FULL,Both embed commands in observations,High
+Observation Space,Phase Signal,Yes,Limited,PARTIAL,"MJX has cyclic phase encoding. mjlab only in tracking task",Medium
+Observation Space,Last Action,Yes,Yes,FULL,Both include previous action in observations,High
+Observation Space,Manual Observation Scaling,Yes,Yes,FULL,"mjlab supports custom scaling per observation (like MJX)",High
+Action Space,Action Scaling,Yes,Yes,FULL,Both support configurable action scaling,High
+Action Space,Action Delay,Yes,No,MISSING,"mjlab doesn't have built-in n_steps_delay parameter",Medium
+Action Space,Action Frames/Decimation,Yes,Yes,FULL,"mjlab has decimation parameter (n_frames in MJX)",High
+Action Space,Per-Joint Action Configuration,Yes,Yes,FULL,"mjlab supports scale/offset per actuator via dict",High
+Domain Randomization,Physics Randomization,Yes,Yes,FULL,"Both support friction, damping, armature randomization",High
+Domain Randomization,Mass Randomization,Yes,Yes,FULL,Both support body mass variation,High
+Domain Randomization,Motor Randomization,Yes,Limited,PARTIAL,"MJX has kp/kd/tau_max randomization. mjlab has basic actuator randomization",Medium
+Domain Randomization,Initial State Randomization,Yes,Yes,FULL,Both support varied starting conditions,High
+Domain Randomization,Push Disturbances,Yes,Yes,FULL,"Both support external force/velocity perturbations",High
+Domain Randomization,Sensor Noise,Yes,Yes,FULL,"Both have comprehensive noise models (uniform, gaussian)",High
+Domain Randomization,IMU Noise,Yes,Partial,PARTIAL,"MJX has AR(1) processes and bias random walks. mjlab has simpler additive bias model",Medium
+Domain Randomization,Terrain Randomization,Yes,Yes,FULL,Both support configurable terrain types,High
+Curriculum Learning,Reward Curriculum,Yes,Yes,FULL,Both support step-based reward weight transitions,High
+Curriculum Learning,Velocity Sampling Curriculum,Yes,Yes,PARTIAL,"mjlab has command curriculum but different implementation",Medium
+Curriculum Learning,Motion Selection Curriculum,Yes,No,MISSING,"mjlab doesn't have enabled_motions progression",Low
+Curriculum Learning,DeepMimic to Command Following,Yes,No,MISSING,"mjlab doesn't have two-phase training (exact tracking -> command following)",Low
+Command System,Multi-Modal Commands,Yes,Yes,FULL,"Both support velocity, angular velocity commands",High
+Command System,Command Resampling,Yes,Yes,FULL,Both support dynamic goal changes with resample_time,High
+Command System,Command Ranges,Yes,Yes,FULL,Both support per-dimension min/max bounds,High
+Command System,Standing/Heading Commands,Yes,Yes,FULL,"mjlab has rel_standing_envs and heading commands",High
+Motion References,Keyframe Motion,Yes,Yes,FULL,"mjlab supports NPZ motion files (tracking task)",High
+Motion References,Motion File Format,LZ4 compressed,NPZ,DIFFERENT,"mjlab uses NPZ instead of LZ4. Need conversion",Medium
+Motion References,ZMP Walking,Yes,No,MISSING,"mjlab doesn't have ZMP-based walking reference generator",Low
+Motion References,Multi-Directional References,Yes,Limited,PARTIAL,"MJX has 4+ directions. mjlab tracking task supports motion files",Medium
+Motion References,Robot-Relative vs Global Frames,Yes,Partial,PARTIAL,"mjlab tracking has frame handling but not as flexible",Medium
+Motion References,Site-Based Tracking,Yes,No,MISSING,"mjlab doesn't support end-effector site position tracking",Low
+Terrain System,Procedural Terrain,Yes,Yes,FULL,"Both support algorithmic terrain generation",High
+Terrain System,Heightfield Terrains,Yes,Yes,FULL,Both support heightfield-based terrains,High
+Terrain System,Terrain Curriculum,Yes,Yes,FULL,Both support difficulty-based terrain progression,High
+Terrain System,Custom Scene Loading,Yes,Yes,FULL,Both support XML scene files,High
+Terrain System,Collision Geometry,Yes,Yes,FULL,Both support configurable collision detection,High
+Noise Modeling,Uniform Noise,Yes,Yes,FULL,Both support uniform noise for observations,High
+Noise Modeling,Gaussian Noise,Yes,Yes,FULL,Both support Gaussian noise,High
+Noise Modeling,Additive Bias,Yes,Yes,FULL,"mjlab has NoiseModelWithAdditiveBias",High
+Noise Modeling,AR(1) Processes,Yes,No,MISSING,"mjlab doesn't have autoregressive noise models",Low
+Noise Modeling,Bias Random Walks,Yes,No,MISSING,"mjlab doesn't have bias random walk (sensor drift)",Low
+Training Infrastructure,Weights & Biases,Yes,Yes,FULL,Both support W&B logging,High
+Training Infrastructure,Checkpointing,Yes,Yes,FULL,Both support model saving/loading,High
+Training Infrastructure,Multi-GPU Support,Yes,Yes,FULL,Both support distributed training,High
+Training Infrastructure,Evaluation Pipeline,Yes,Yes,FULL,Both support play/evaluation modes,High
+Training Infrastructure,Video Logging,Yes,Yes,FULL,Both support visual progress tracking,High
+Training Infrastructure,Metric Logging,Yes,Yes,FULL,Both log training statistics,High
+Simulation Features,Contact Handling,Yes,Yes,FULL,Both handle contact forces,High
+Simulation Features,Actuator Modeling,Yes,Yes,FULL,"Both support PD control, force/velocity limits",High
+Simulation Features,Solver Configuration,Yes,Yes,FULL,Both support solver parameter tuning,High
+Performance Features,GPU Acceleration,Yes (JAX),Yes (Warp),FULL,"Different backends but both GPU-accelerated",High
+Performance Features,Vectorized Environments,Yes,Yes,FULL,Both support parallel environment execution,High
+Performance Features,Batch Processing,Yes,Yes,FULL,Both use vectorized operations,High
+
+SUMMARY - Migration Work Required:
+Critical (Must Have):
+1. Frame stacking implementation for observations
+2. Convert Gin configs to mjlab dataclass configs
+3. Port specialized environments if needed
+4. Convert motion file formats (LZ4 to NPZ)
+
+Important (Should Have):
+1. Action delay mechanism
+2. Advanced IMU noise models (AR(1), bias random walks)
+3. Motion selection curriculum
+4. DeepMimic-specific reward functions
+5. Phase signal for periodic motions
+
+Optional (Nice to Have):
+1. Recurrent policy networks
+2. Symmetry augmentation/mirror loss
+3. ZMP walking reference generator
+4. Site-based tracking
+5. More specialized environments
+
+Notes:
+- mjlab uses PyTorch instead of JAX (different paradigm)
+- Configuration system is fundamentally different (dataclass vs Gin)
+- mjlab is more modular and cleaner but missing some specialized features
+- Core training infrastructure is equivalent or better in mjlab
+- Most RL fundamentals are present and well-implemented
+
+
+
+

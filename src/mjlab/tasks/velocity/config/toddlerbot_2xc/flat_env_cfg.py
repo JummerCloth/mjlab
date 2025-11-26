@@ -25,9 +25,15 @@ class ToddlerBotFlatEnvCfg(ToddlerBotRoughEnvCfg):
 
 
 @dataclass
-class UnitreeG1FlatEnvCfg_PLAY(ToddlerBotFlatEnvCfg):
+class ToddlerBotFlatEnvCfg_PLAY(ToddlerBotFlatEnvCfg):
   def __post_init__(self):
     super().__post_init__()
 
     # Effectively infinite episode length.
     self.episode_length_s = int(1e9)
+    
+    # Increase command ranges for more visible movement during eval
+    self.commands.twist.ranges.lin_vel_x = (-0.5, 0.5)  # 2x faster forward/back
+    self.commands.twist.ranges.lin_vel_y = (-0.2, 0.2)  # 2x faster lateral
+    self.commands.twist.ranges.ang_vel_z = (-2.0, 2.0)  # 2x faster turning
+    self.commands.twist.rel_standing_envs = 0.0  # No standing, always moving!
