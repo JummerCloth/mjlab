@@ -109,6 +109,60 @@ class ViserPlayViewer(BaseViewer):
         camera_elevation=self.cfg.elevation,
       )
 
+      # Command visualization and manual control for velocity tasks
+      if hasattr(self.env.unwrapped, "command_manager"):
+        cmd_manager = self.env.unwrapped.command_manager
+        if "twist" in cmd_manager._terms:
+          with self._server.gui.add_folder("Commands"):
+            # Display current commands as text
+            self._command_display = self._server.gui.add_html(
+              "<div style='font-size: 0.9em; line-height: 1.5; padding: 0.5em;'>"
+              "<strong>Current Commands:</strong><br/>"
+              "Waiting for first update..."
+              "</div>"
+            )
+
+            # Manual control mode
+            self._manual_control_cb = self._server.gui.add_checkbox(
+              "Manual Control",
+              initial_value=False,
+              hint="Override automatic commands with manual sliders",
+            )
+
+            # Manual control sliders
+            self._manual_forward_slider = self._server.gui.add_slider(
+              "Forward (m/s)",
+              min=-0.5,
+              max=0.5,
+              step=0.05,
+              initial_value=0.0,
+              disabled=True,
+            )
+            self._manual_lateral_slider = self._server.gui.add_slider(
+              "Lateral (m/s)",
+              min=-0.3,
+              max=0.3,
+              step=0.05,
+              initial_value=0.0,
+              disabled=True,
+            )
+            self._manual_turn_slider = self._server.gui.add_slider(
+              "Turn (rad/s)",
+              min=-2.0,
+              max=2.0,
+              step=0.1,
+              initial_value=0.0,
+              disabled=True,
+            )
+
+            @self._manual_control_cb.on_update
+            def _(_) -> None:
+              # Enable/disable sliders based on manual control mode
+              is_manual = self._manual_control_cb.value
+              self._manual_forward_slider.disabled = not is_manual
+              self._manual_lateral_slider.disabled = not is_manual
+              self._manual_turn_slider.disabled = not is_manual
+
     self._prev_env_idx = self._scene.env_idx
 
     # Reward plots tab.
@@ -131,9 +185,15 @@ class ViserPlayViewer(BaseViewer):
     """Synchronize environment state to viewer."""
     sim = self.env.unwrapped.sim
     assert isinstance(sim, Simulation)
+    
+    # Apply manual commands if enabled
+    self._apply_manual_commands()
+    
     self._counter += 1
     if self._counter % 10 == 0:
       self._update_status_display()
+      self._update_command_display()
+      
       if self._scene.env_idx != self._prev_env_idx:
         self._prev_env_idx = self._scene.env_idx
         if self._reward_plotter:
@@ -194,6 +254,82 @@ class ViserPlayViewer(BaseViewer):
   def is_running(self) -> bool:
     """Check if viewer is running."""
     return True  # Viser runs until process is killed.
+
+  def _apply_manual_commands(self) -> None:
+    """Apply manual commands if manual control is enabled."""
+    if not hasattr(self, "_manual_control_cb") or not self._manual_control_cb.value:
+      return
+
+    if not hasattr(self.env.unwrapped, "command_manager"):
+      return
+
+    cmd_manager = self.env.unwrapped.command_manager
+    if "twist" not in cmd_manager._terms:
+      return
+
+    cmd_term = cmd_manager.get_term("twist")
+    if cmd_term is None:
+      return
+
+    # Set manual commands for all environments
+    cmd_term.vel_command_b[:, 0] = self._manual_forward_slider.value
+    cmd_term.vel_command_b[:, 1] = self._manual_lateral_slider.value
+    cmd_term.vel_command_b[:, 2] = self._manual_turn_slider.value
+
+  def _update_command_display(self) -> None:
+    """Update the command display with current velocity commands."""
+    if not hasattr(self, "_command_display"):
+      return
+
+    if not hasattr(self.env.unwrapped, "command_manager"):
+      return
+
+    cmd_manager = self.env.unwrapped.command_manager
+    if "twist" not in cmd_manager._terms:
+      return
+
+    cmd_term = cmd_manager.get_term("twist")
+    if cmd_term is None:
+      return
+
+    # Get command for the currently selected environment
+    cmd = cmd_term.vel_command_b[self._scene.env_idx].cpu().numpy()
+    forward = cmd[0]
+    lateral = cmd[1]
+    turn = cmd[2]
+
+    # Get actual velocities for comparison
+    from mjlab.entity import Entity
+    robot: Entity = self.env.unwrapped.scene[cmd_term.cfg.asset_name]
+    actual_vel = robot.data.root_link_lin_vel_b[self._scene.env_idx].cpu().numpy()
+    actual_ang = robot.data.root_link_ang_vel_b[self._scene.env_idx].cpu().numpy()
+
+    # Format the display
+    mode_str = (
+      "<span style='color: #ff6b6b; font-weight: bold;'>MANUAL</span>"
+      if hasattr(self, "_manual_control_cb") and self._manual_control_cb.value
+      else "<span style='color: #51cf66;'>AUTO</span>"
+    )
+
+    self._command_display.content = f"""
+      <div style='font-size: 0.85em; line-height: 1.6; padding: 0.5em; 
+                  background: #f8f9fa; border-radius: 4px; 
+                  font-family: monospace;'>
+        <strong>Commands (Env {self._scene.env_idx})</strong> [{mode_str}]<br/>
+        <div style='margin-top: 0.3em;'>
+          <strong>Commanded:</strong><br/>
+          &nbsp;&nbsp;Forward: {forward:+.3f} m/s<br/>
+          &nbsp;&nbsp;Lateral: {lateral:+.3f} m/s<br/>
+          &nbsp;&nbsp;Turn: {turn:+.3f} rad/s<br/>
+        </div>
+        <div style='margin-top: 0.3em;'>
+          <strong>Actual:</strong><br/>
+          &nbsp;&nbsp;Forward: {actual_vel[0]:+.3f} m/s<br/>
+          &nbsp;&nbsp;Lateral: {actual_vel[1]:+.3f} m/s<br/>
+          &nbsp;&nbsp;Turn: {actual_ang[2]:+.3f} rad/s<br/>
+        </div>
+      </div>
+    """
 
   def _update_status_display(self) -> None:
     """Update the HTML status display."""
