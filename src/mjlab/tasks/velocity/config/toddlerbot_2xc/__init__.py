@@ -1,42 +1,22 @@
-import gymnasium as gym
+from mjlab.tasks.registry import register_mjlab_task
+from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
-gym.register(
-  id="Mjlab-Velocity-Rough-ToddlerBot-2xc",
-  entry_point="mjlab.envs:ManagerBasedRlEnv",
-  disable_env_checker=True,
-  kwargs={
-    "env_cfg_entry_point": f"{__name__}.rough_env_cfg:ToddlerBotRoughEnvCfg",
-    "rl_cfg_entry_point": f"{__name__}.rl_cfg:ToddlerBotPPORunnerCfg",
-  },
+from .flat_env_cfg import toddlerbot_flat_env_cfg
+from .rl_cfg import toddlerbot_ppo_runner_cfg
+from .rough_env_cfg import toddlerbot_rough_env_cfg
+
+register_mjlab_task(
+  task_id="Mjlab-Velocity-Rough-ToddlerBot-2xc",
+  env_cfg=toddlerbot_rough_env_cfg(),
+  play_env_cfg=toddlerbot_rough_env_cfg(play=True),
+  rl_cfg=toddlerbot_ppo_runner_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
 )
 
-gym.register(
-  id="Mjlab-Velocity-Rough-ToddlerBot-2xc-Play",
-  entry_point="mjlab.envs:ManagerBasedRlEnv",
-  disable_env_checker=True,
-  kwargs={
-    "env_cfg_entry_point": f"{__name__}.rough_env_cfg:ToddlerBotRoughEnvCfg_PLAY",
-    "rl_cfg_entry_point": f"{__name__}.rl_cfg:ToddlerBotPPORunnerCfg",
-  },
-)
-
-
-gym.register(
-  id="Mjlab-Velocity-Flat-ToddlerBot-2xc",
-  entry_point="mjlab.envs:ManagerBasedRlEnv",
-  disable_env_checker=True,
-  kwargs={
-    "env_cfg_entry_point": f"{__name__}.flat_env_cfg:ToddlerBotFlatEnvCfg",
-    "rl_cfg_entry_point": f"{__name__}.rl_cfg:ToddlerBotPPORunnerCfg",
-  },
-)
-
-gym.register(
-  id="Mjlab-Velocity-Flat-ToddlerBot-2xc-Play",
-  entry_point="mjlab.envs:ManagerBasedRlEnv",
-  disable_env_checker=True,
-  kwargs={
-    "env_cfg_entry_point": f"{__name__}.flat_env_cfg:ToddlerBotFlatEnvCfg_PLAY",
-    "rl_cfg_entry_point": f"{__name__}.rl_cfg:ToddlerBotPPORunnerCfg",
-  },
+register_mjlab_task(
+  task_id="Mjlab-Velocity-Flat-ToddlerBot-2xc",
+  env_cfg=toddlerbot_flat_env_cfg(),
+  play_env_cfg=toddlerbot_flat_env_cfg(play=True),
+  rl_cfg=toddlerbot_ppo_runner_cfg(),
+  runner_cls=VelocityOnPolicyRunner,
 )

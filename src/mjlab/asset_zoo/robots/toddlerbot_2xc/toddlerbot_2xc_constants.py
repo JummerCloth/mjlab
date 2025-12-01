@@ -5,9 +5,10 @@ from pathlib import Path
 import mujoco
 
 from mjlab import MJLAB_SRC_PATH
+from mjlab.actuator import BuiltinPositionActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.os import update_assets
-from mjlab.utils.spec_config import ActuatorCfg, CollisionCfg
+from mjlab.utils.spec_config import CollisionCfg
 
 ##
 # MJCF and assets.
@@ -167,45 +168,6 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
         ".*": 0.0,
     },
     joint_vel={".*": 0.0},  # All joint velocities set to zero
-    ctrl={
-        # Control targets match joint_pos for actuated joints (use regex anchors!)
-        
-        r"^neck_yaw_drive$": 0.0,
-        r"^neck_pitch_act$": 0.0,
-        r"^waist_act_1$": 0.0,
-        r"^waist_act_2$": 0.0,
-        
-        # Knee-bending pose
-        r"^left_hip_pitch$": -0.4136,
-        r"^left_hip_roll$": -0.0031,
-        r"^left_hip_yaw_drive$": 0.00735,
-        r"^left_knee$": -0.9527,
-        r"^left_ankle_roll$": 0.0014,
-        r"^left_ankle_pitch$": -0.5421,
-        
-        r"^right_hip_pitch$": 0.4158,
-        r"^right_hip_roll$": -0.0014,
-        r"^right_hip_yaw_drive$": -0.00362,
-        r"^right_knee$": 0.9562,
-        r"^right_ankle_roll$": -0.0065,
-        r"^right_ankle_pitch$": 0.5424,
-        
-        r"^left_shoulder_pitch$": 0.1736,
-        r"^left_shoulder_roll$": 0.0713,
-        r"^left_shoulder_yaw_drive$": 1.5621,
-        r"^left_elbow_roll$": -0.5135,
-        r"^left_elbow_yaw_drive$": -1.5692,
-        r"^left_wrist_pitch_drive$": -1.2209,
-        r"^left_wrist_roll$": 0.0,
-        
-        r"^right_shoulder_pitch$": -0.1736,
-        r"^right_shoulder_roll$": 0.0808,
-        r"^right_shoulder_yaw_drive$": -1.568,
-        r"^right_elbow_roll$": -0.5133,
-        r"^right_elbow_yaw_drive$": 1.5691,
-        r"^right_wrist_pitch_drive$": 1.2209,
-        r"^right_wrist_roll$": 0.0,
-    },
 )
 
 ##
@@ -216,14 +178,14 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
 # Self-collisions are given condim=1 while foot collisions
 # are given condim=3 and custom friction and solimp.
 FULL_COLLISION = CollisionCfg(
-  geom_names_expr=[".*_collision"],
+  geom_names_expr=(".*_collision",),
   condim={r"^(left|right)_foot\d+_collision$": 3, ".*_collision": 1},
   priority={r"^(left|right)_foot\d+_collision$": 1},
   friction={r"^(left|right)_foot\d+_collision$": (0.6,)},  # TODO: tune friction
 )
 
 FULL_COLLISION_WITHOUT_SELF = CollisionCfg(
-  geom_names_expr=[".*_collision"],
+  geom_names_expr=(".*_collision",),
   contype={r".*_collision": 1},  # Enable collision with terrain for all geoms
   conaffinity=0,  # Disable self-collision (geoms won't collide with each other)
   condim={r"^(left|right)_foot\d+_collision$": 3, ".*_collision": 1},
@@ -234,7 +196,7 @@ FULL_COLLISION_WITHOUT_SELF = CollisionCfg(
 # This disables all collisions except the feet.
 # Feet get condim=3, all other geoms are disabled.
 FEET_ONLY_COLLISION = CollisionCfg(
-  geom_names_expr=[r"^(left|right)_foot\d+_collision$"],
+  geom_names_expr=(r"^(left|right)_foot\d+_collision$",),
   contype=0,
   conaffinity=1,
   condim=3,
@@ -249,8 +211,8 @@ FEET_ONLY_COLLISION = CollisionCfg(
 # Define actuators for controllable joints only (excluding mechanism joints like *_driven)
 # CRITICAL: Use regex anchors (^$) to prevent "drive" from matching "driven"!
 # Without anchors, "left_hip_yaw_drive" matches BOTH "left_hip_yaw_drive" AND "left_hip_yaw_driven"
-TODDLERBOT_ACTUATORS = ActuatorCfg(
-  joint_names_expr=[
+TODDLERBOT_ACTUATORS = BuiltinPositionActuatorCfg(
+  joint_names_expr=(
     # CRITICAL: Order must match EXACTLY the original XML actuator section!
     # Neck
     r"^neck_yaw_drive$",
@@ -288,7 +250,7 @@ TODDLERBOT_ACTUATORS = ActuatorCfg(
     r"^right_elbow_yaw_drive$",
     r"^right_wrist_pitch_drive$",
     r"^right_wrist_roll$",
-  ],
+  ),
   effort_limit=100.0,  # N·m, tune this based on actual motor specs
   armature=0.01,  # kg·m², tune based on actual motor specs
   stiffness=100.0,  # N·m/rad, tune for desired impedance
@@ -312,6 +274,16 @@ TODDLERBOT_ROBOT_CFG = EntityCfg(
 )
 
 TODDLERBOT_ACTION_SCALE = {".*": 0.25}
+
+
+def get_toddlerbot_robot_cfg() -> EntityCfg:
+  """Get the ToddlerBot robot configuration.
+
+  Returns a fresh copy to allow per-instance customization.
+  """
+  from dataclasses import replace
+
+  return replace(TODDLERBOT_ROBOT_CFG)
 
 if __name__ == "__main__":
   import mujoco.viewer as viewer

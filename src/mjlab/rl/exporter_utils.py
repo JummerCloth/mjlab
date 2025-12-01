@@ -37,19 +37,27 @@ def get_base_metadata(
   # Build mapping from joint name to actuator ID for natural joint order.
   # Each spec actuator controls exactly one joint (via its target field).
   joint_name_to_ctrl_id = {}
+  actuated_joint_names = []
   for actuator in robot.spec.actuators:
     joint_name = actuator.target.split("/")[-1]
     joint_name_to_ctrl_id[joint_name] = actuator.id
-  # Get actuator IDs in natural joint order (same order as robot.joint_names).
-  ctrl_ids_natural = [joint_name_to_ctrl_id[jname] for jname in robot.joint_names]
+    actuated_joint_names.append(joint_name)
+  # Get actuator IDs in natural joint order (only actuated joints).
+  # Some robots (e.g., ToddlerBot) have mechanism joints that are not actuated.
+  ctrl_ids_natural = [joint_name_to_ctrl_id[jname] for jname in actuated_joint_names]
   joint_stiffness = env.sim.mj_model.actuator_gainprm[ctrl_ids_natural, 0]
   joint_damping = -env.sim.mj_model.actuator_biasprm[ctrl_ids_natural, 2]
+  # Get default joint positions only for actuated joints.
+  actuated_joint_ids = [
+    robot.joint_names.index(jname) for jname in actuated_joint_names
+  ]
+  default_joint_pos_actuated = robot.data.default_joint_pos[0, actuated_joint_ids]
   return {
     "run_path": run_path,
-    "joint_names": list(robot.joint_names),
+    "joint_names": actuated_joint_names,
     "joint_stiffness": joint_stiffness.tolist(),
     "joint_damping": joint_damping.tolist(),
-    "default_joint_pos": robot.data.default_joint_pos[0].cpu().tolist(),
+    "default_joint_pos": default_joint_pos_actuated.cpu().tolist(),
     "command_names": list(env.command_manager.active_terms),
     "observation_names": env.observation_manager.active_terms["policy"],
     "action_scale": joint_action._scale[0].cpu().tolist()

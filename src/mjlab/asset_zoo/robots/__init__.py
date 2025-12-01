@@ -1,3 +1,9 @@
+from mjlab.asset_zoo.robots.toddlerbot_2xc.toddlerbot_2xc_constants import (
+  TODDLERBOT_ACTION_SCALE as TODDLERBOT_ACTION_SCALE,
+)
+from mjlab.asset_zoo.robots.toddlerbot_2xc.toddlerbot_2xc_constants import (
+  get_toddlerbot_robot_cfg as get_toddlerbot_robot_cfg,
+)
 from mjlab.asset_zoo.robots.unitree_g1.g1_constants import (
   G1_ACTION_SCALE as G1_ACTION_SCALE,
 )

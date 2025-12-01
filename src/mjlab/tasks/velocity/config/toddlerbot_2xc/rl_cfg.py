@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+"""RL configuration for ToddlerBot velocity task."""
 
 from mjlab.rl import (
   RslRlOnPolicyRunnerCfg,
@@ -7,12 +7,13 @@ from mjlab.rl import (
 )
 
 
-@dataclass
-class ToddlerBotPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-  """PPO configuration for ToddlerBot matching original codebase hyperparameters."""
+def toddlerbot_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+  """Create RL runner configuration for ToddlerBot velocity task.
   
-  policy: RslRlPpoActorCriticCfg = field(
-    default_factory=lambda: RslRlPpoActorCriticCfg(
+  Uses hyperparameters from the original ToddlerBot codebase.
+  """
+  return RslRlOnPolicyRunnerCfg(
+    policy=RslRlPpoActorCriticCfg(
       init_noise_std=0.5,  # From old config (was 1.0)
       noise_std_type="log",  # From old config (was "scalar")
       actor_obs_normalization=False,  # Using custom obs scaling instead
@@ -20,10 +21,8 @@ class ToddlerBotPPORunnerCfg(RslRlOnPolicyRunnerCfg):
       actor_hidden_dims=(512, 256, 128),
       critic_hidden_dims=(512, 256, 128),
       activation="elu",
-    )
-  )
-  algorithm: RslRlPpoAlgorithmCfg = field(
-    default_factory=lambda: RslRlPpoAlgorithmCfg(
+    ),
+    algorithm=RslRlPpoAlgorithmCfg(
       value_loss_coef=1.0,
       use_clipped_value_loss=True,
       clip_param=0.2,
@@ -36,9 +35,9 @@ class ToddlerBotPPORunnerCfg(RslRlOnPolicyRunnerCfg):
       lam=0.95,
       desired_kl=0.01,
       max_grad_norm=1.0,
-    )
+    ),
+    experiment_name="toddlerbot_velocity",
+    save_interval=50,
+    num_steps_per_env=20,  # From old config: unroll_length (was 24)
+    max_iterations=30_000,
   )
-  experiment_name: str = "toddlerbot_velocity"
-  save_interval: int = 50
-  num_steps_per_env: int = 20  # From old config: unroll_length (was 24)
-  max_iterations: int = 30_000

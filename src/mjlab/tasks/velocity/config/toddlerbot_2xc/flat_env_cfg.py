@@ -1,39 +1,35 @@
-from dataclasses import dataclass
+"""ToddlerBot flat terrain velocity environment configuration."""
 
+from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.tasks.velocity.config.toddlerbot_2xc.rough_env_cfg import (
-  ToddlerBotRoughEnvCfg,
+  toddlerbot_rough_env_cfg,
 )
+from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
 
-@dataclass
-class ToddlerBotFlatEnvCfg(ToddlerBotRoughEnvCfg):
-  def __post_init__(self):
-    super().__post_init__()
+def toddlerbot_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+  """Create ToddlerBot flat terrain velocity configuration."""
+  cfg = toddlerbot_rough_env_cfg(play=play)
 
-    assert self.scene.terrain is not None
-    self.scene.terrain.terrain_type = "plane"
-    self.scene.terrain.terrain_generator = None
-    self.curriculum.terrain_levels = None
+  # Switch to flat terrain.
+  assert cfg.scene.terrain is not None
+  cfg.scene.terrain.terrain_type = "plane"
+  cfg.scene.terrain.terrain_generator = None
 
-    self.curriculum.command_vel = None
+  # Disable terrain curriculum.
+  assert cfg.curriculum is not None
+  if "terrain_levels" in cfg.curriculum:
+    del cfg.curriculum["terrain_levels"]
 
-    # assert self.events.push_robot is not None
-    # self.events.push_robot.params["velocity_range"] = {
-    #   "x": (-0.05, 0.05),
-    #   "y": (-0.05, 0.05),
-    # }
-
-
-@dataclass
-class ToddlerBotFlatEnvCfg_PLAY(ToddlerBotFlatEnvCfg):
-  def __post_init__(self):
-    super().__post_init__()
-
-    # Effectively infinite episode length.
-    self.episode_length_s = int(1e9)
-    
+  if play:
+    commands = cfg.commands
+    assert commands is not None
+    twist_cmd = commands["twist"]
+    assert isinstance(twist_cmd, UniformVelocityCommandCfg)
     # Increase command ranges for more visible movement during eval
-    self.commands.twist.ranges.lin_vel_x = (-0.5, 0.5)  # 2x faster forward/back
-    self.commands.twist.ranges.lin_vel_y = (-0.2, 0.2)  # 2x faster lateral
-    self.commands.twist.ranges.ang_vel_z = (-2.0, 2.0)  # 2x faster turning
-    self.commands.twist.rel_standing_envs = 0.0  # No standing, always moving!
+    twist_cmd.ranges.lin_vel_x = (-0.5, 0.5)
+    twist_cmd.ranges.lin_vel_y = (-0.2, 0.2)
+    twist_cmd.ranges.ang_vel_z = (-2.0, 2.0)
+    twist_cmd.rel_standing_envs = 0.0  # No standing, always moving!
+
+  return cfg
