@@ -9,15 +9,17 @@ from mjlab.rl import (
 
 def toddlerbot_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
   """Create RL runner configuration for ToddlerBot velocity task.
-  
-  Uses hyperparameters from the original ToddlerBot codebase.
+
+  Uses similar hyperparameters to G1 for the mjlab velocity tracking task.
+  The original ToddlerBot codebase used custom observation scaling, but since
+  we're using standard observations with running normalization, we use
+  standard hyperparameters.
   """
   return RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
-      init_noise_std=0.5,  # From old config (was 1.0)
-      noise_std_type="log",  # From old config (was "scalar")
-      actor_obs_normalization=False,  # Using custom obs scaling instead
-      critic_obs_normalization=False,  # Using custom obs scaling instead
+      init_noise_std=1.0,
+      actor_obs_normalization=True,  # Use running normalization
+      critic_obs_normalization=True,  # Use running normalization
       actor_hidden_dims=(512, 256, 128),
       critic_hidden_dims=(512, 256, 128),
       activation="elu",
@@ -26,18 +28,18 @@ def toddlerbot_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       value_loss_coef=1.0,
       use_clipped_value_loss=True,
       clip_param=0.2,
-      entropy_coef=5e-4,  # From old config (was 0.01)
-      num_learning_epochs=4,  # From old config: num_updates_per_batch (was 5)
-      num_mini_batches=8,  # From old config (was 4)
-      learning_rate=3e-5,  # From old config (was 1e-3)
+      entropy_coef=0.01,  # Standard exploration coefficient
+      num_learning_epochs=5,
+      num_mini_batches=4,
+      learning_rate=1.0e-3,  # Standard learning rate
       schedule="adaptive",
-      gamma=0.97,  # From old config (was 0.99)
+      gamma=0.99,
       lam=0.95,
       desired_kl=0.01,
       max_grad_norm=1.0,
     ),
     experiment_name="toddlerbot_velocity",
     save_interval=50,
-    num_steps_per_env=20,  # From old config: unroll_length (was 24)
+    num_steps_per_env=24,
     max_iterations=30_000,
   )

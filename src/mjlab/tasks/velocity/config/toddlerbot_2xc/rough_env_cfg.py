@@ -168,9 +168,17 @@ def toddlerbot_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
 
-  # Disable command velocity curriculum for ToddlerBot
+  # Configure command velocity curriculum for ToddlerBot (slower speeds than G1)
+  # ToddlerBot is smaller, so we use more conservative velocity ranges
   if cfg.curriculum is not None and "command_vel" in cfg.curriculum:
-    del cfg.curriculum["command_vel"]
+    cfg.curriculum["command_vel"].params["velocity_stages"] = [
+      # Start with very conservative velocities
+      {"step": 0, "lin_vel_x": (-0.25, 0.25), "lin_vel_y": (-0.05, 0.05), "ang_vel_z": (-0.3, 0.3)},
+      # Gradually increase after learning basics
+      {"step": 500 * 24, "lin_vel_x": (-0.25, 0.25), "lin_vel_y": (-0.1, 0.1), "ang_vel_z": (-0.5, 0.5)},
+      # Further increase for more dynamic walking
+      {"step": 5000 * 24, "lin_vel_x": (-0.4, 0.4), "lin_vel_y": (-0.15, 0.15), "ang_vel_z": (-0.7, 0.7)},
+    ]
 
   # Apply play mode overrides.
   if play:
